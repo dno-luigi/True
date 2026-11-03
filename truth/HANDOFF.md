@@ -9,8 +9,8 @@
 >
 > **No behavior changes were made alongside this doc.** It is documentation only. The
 > bugs in [Landmines](#landmines-read-before-you-touch-anything) were first *documented, not
-> fixed*; `1` and `4` have since been fixed in `truth/src/worker.js` (§ Changes in this branch),
-> and **none of it is deployed** — the running Worker still behaves as described.
+> fixed*; `1` and `4` have since been fixed and **deployed to production on 2026-11-03** (version
+> `a82aa770-5234-4b88-bc3b-d79cd240e5f1`). The items still listed as open are still open.
 
 Live deployment: `https://truth.ai-n.workers.dev`
 Verified against production on 2026-11-03 (§ [Production checks](#production-checks)).
@@ -362,8 +362,9 @@ This is the exact body production returns for `/`, `/admin`, `/docs` — see bel
 
 ## Changes in this branch
 
-Three edits to `truth/src/worker.js`. **Nothing is deployed**, so the running Worker still behaves
-exactly as § Landmines describes.
+Three edits to `truth/src/worker.js`, **live in production** as of 2026-11-03 (version
+`a82aa770-5234-4b88-bc3b-d79cd240e5f1`). The pre-deploy script is backed up in
+`/tmp/truth-live-1793742986.js` and Cloudflare retains the previous version for rollback.
 
 1. **The resolver reads memory rows.** New `getMemory()` looks up `truth:<id>` in the same
    namespace and is called between the provisional and proxy layers. It is **read-only** — no
@@ -385,14 +386,18 @@ Verified with a local harness (stub KV, real handler, no network, no deploy): me
 flagged unverified, master still outranking memory, miss still `200` with `status: "miss"`,
 `master/update` returning `200`, and a 1,192-key store counting correctly.
 
+Confirmed in production after the deploy: `/debug/kv-status` returns `1,192`, and a `resolve` for a
+key that exists only as a memory row changed from `status: "miss"` to `status: "ok"` with
+`source: "memory_truth"`. `master/update` was **not** exercised against a curated row — only
+against a stub — so a first real edit should be done on a throwaway id.
+
 ---
 
 ## Landmines (read before you touch anything)
 
-Status: **1 and 4 are fixed in `truth/src/worker.js` but not deployed.** Everything else below is
-still true of the build that is running today.
+Status: **1 and 4 are fixed and live.** Everything else below still describes the running Worker.
 
-1. **`/api/truth/master/update` threw on every existing key — fixed, not deployed.** In
+1. **`/api/truth/master/update` threw on every existing key — fixed and live.** In
    `updateMaster`, `now` was used before it is declared:
 
    ```js
@@ -433,10 +438,10 @@ still true of the build that is running today.
    resolving at the provisional layer forever. A one-time sweep of `truth:provisional:*` is the
    real fix.
 
-4. **`/debug/kv-status` undercounted below the cap — fixed, not deployed.** `list()` returns one
-   short page and no cursor, so it reported **954** where a cursor walk finds **1,192**. Both
-   counts were "at least" figures. `countKeys()` now follows the cursor. The route is still public
-   and unauthenticated.
+4. **`/debug/kv-status` undercounted below the cap — fixed and live.** `list()` returns one short
+   page and no cursor, so it reported **954** where a cursor walk finds **1,192**. `countKeys()`
+   now follows the cursor, and production reports `1,192`. The route is still public and
+   unauthenticated.
 
 5. **`queryProvisionals` costs one KV op per hit.** It lists keys, then `get`s each one. With
    `limit=20` that is 1 list + up to 20 reads, and `limit` is passed straight through from the
@@ -502,8 +507,11 @@ Observed on 2026-11-03:
 ```
 POST /api/truth/resolve {"input":""}        → 400 {"error":"input required"}
 GET  /api/truth/provisional/query?limit=1   → 200 {"success":true,"results":[]}
-GET  /debug/kv-status                       → 200 {"masterCount":65,"provisionalCount":954}
-                                               (954 is a short page; 1,192 by cursor walk)
+GET  /debug/kv-status                       → 200 {"masterCount":65,"provisionalCount":1192}
+                                               (reported 954 before the 2026-11-03 deploy)
+POST /api/truth/resolve {"input":"hello"}   → 200 ok, layer "provisional",
+                                               source "memory_truth", confidence 0.8
+                                               (was a miss before the deploy)
 OPTIONS /api/truth/resolve                  → 204
 GET  / , /admin , /docs , /admin.html       → 404 {"error":"Not found"}
 ```
@@ -520,8 +528,8 @@ The numbers are the whole story, and they are not what the earlier notes assumed
 
 - **18** `master:` rows are addressable. The other 47 keys in `master truths` are `review:`,
   `truth:t_<hex>` and `truths:index`, and no route reads them.
-- **1,150** memory rows sit under `truth:<slug>` in `Memoria`, and `resolve` now reads that
-  prefix (unpushed, undeployed).
+- **1,150** memory rows sit under `truth:<slug>` in `Memoria`, and `resolve` reads that prefix
+  as of the 2026-11-03 deploy.
 - **0** `provisional:` rows exist, so layer 2 never fires; `PROXY` is unbound, so layer 3 never
   fires. The 24 h TTL is not decaying a backlog — nothing is being written.
 
@@ -555,7 +563,7 @@ In rough priority order:
 ## First day
 
 1. Read the three behaviors in the header comment, then § Changes in this branch and § Landmines.
-   Landmines 1 and 4 are fixed locally but **live production still has both bugs**.
+   Landmines 1 and 4 are fixed and live; the rest still describe the running Worker.
 2. Run the five `curl`s in § Production checks and confirm you get the same numbers.
 3. Confirm which Worker serves the console (`/admin` → `503 admin_key_unset`) and which serves
    this API (`404`). They are different hostnames; do not hand out the wrong one.
