@@ -524,6 +524,11 @@ hostname is not a bug.
 
 ## Where curation goes next
 
+**The promotion design is in [`CURATION.md`](CURATION.md)** — answer clustering, ballot integrity,
+the evidence gate that keeps popularity from ratifying anything, what confidence can honestly mean,
+contested answers with alternatives, and the phase plan. This section is only the state of the data
+that design has to work with.
+
 The numbers are the whole story, and they are not what the earlier notes assumed:
 
 - **18** `master:` rows are addressable. The other 47 keys in `master truths` are `review:`,
